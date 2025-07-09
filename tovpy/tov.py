@@ -83,6 +83,16 @@ class TOV(object):
         self.ode_atol = ode_atol
         self.ode_rtol = ode_rtol
 
+        self.solved = False
+        self.M = np.nan
+        self.R = np.nan
+        self.C = np.nan
+        if len(self.leven) != 0:
+            self.k, self.h = {}, {}
+
+        if len(self.lodd) != 0:
+            self.j = {}
+
         
     def __buildvars(self):
         """
@@ -255,20 +265,28 @@ class TOV(object):
         #k2 = self.__compute_Love_even_ell2(self, self.C,yyl)
         # Even Love numbers
 
+        self.pc = pc
+        self.M = M
+        self.R = R
+        self.C = C
         self.sol = sol
         if len(self.leven) != 0:
             k, h = {}, {}
             for l in self.leven:
                 yyl = R * y[self.var['dH{}'.format(l)]] / y[self.var['H{}'.format(l)]]
-                k[l] = self.__compute_Love_even(l,C,yyl)   
+                k[l] = self.__compute_Love_even(l,C,yyl)
                 h[l] = self.__compute_shape(l,C,yyl)
+            self.k = k
+            self.h = h
         if len(self.lodd) != 0:                
         # Odd Love numbers
             j = {}
             for l in self.lodd:
                 yyl = R*y[self.var['dPsi{}'.format(l)]]/y[self.var['Psi{}'.format(l)]]
                 j[l]= self.__compute_Love_odd(l,C,yyl)
+            self.j = j
 
+        self.solved = True
         if len(self.leven)!= 0 and len(self.lodd)!= 0:
             return M,R,C,k,h,j
         elif len(self.leven)!= 0 and len(self.lodd)== 0:
@@ -477,5 +495,3 @@ class TOV(object):
         """
         div = 1.0/(factorial2(2*ell-1)*C**(2*ell+1))
         return 2.*k*div
-
-

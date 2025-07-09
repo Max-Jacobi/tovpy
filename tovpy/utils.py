@@ -37,7 +37,7 @@ class Utils:
 
     """
 
-    def __init__(self, eos, p, path=None):
+    def __init__(self, eos, p, path=None, verbose=False):
         """
         Parameters
         ----------
@@ -54,6 +54,7 @@ class Utils:
         if len(p) == 0:
             raise ValueError("Must provide a pressure array")
         self.p = np.array(p)
+        self.verbose = verbose
 
     def eos_plot(self, savefigon= False, filename=None):
         """
@@ -317,7 +318,10 @@ class Utils:
         j_vars = {}
         for l in lodd:
             j_vars['j' + str(l)] = np.zeros(len(self.p))
-        for i, pc in enumerate(self.p):
+        for i, pc in tqdm(enumerate(self.p),
+                          unit='tov', desc="Solving TOVs",
+                          total=len(self.p),
+                          disable=not self.verbose):
             m, r, c, k, h, j = this_tov.solve(pc)
             r *= 1./1e3
             m *= 1./uts.constant['MRSUN_SI'][0]
