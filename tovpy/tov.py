@@ -15,20 +15,11 @@ You should have received a copy of the GNU General Public License
 along with this program. If not, see <https://www.gnu.org/licenses/>.
 """
 
-import sys, os, shutil
 import numpy as np
 from numpy import log, exp
-import scipy as sp
-from scipy.integrate import solve_ivp, odeint
+from scipy.integrate import solve_ivp
 from scipy.special import factorial2, gamma, factorial2, hyp2f1, poch
-import matplotlib.pyplot as plt
-from scipy.optimize import fsolve, bisect
 from math import comb, prod
-
-from . import eos
-from . import units
-from .eos import EOS
-from .units import Units
 
 class TOV(object):
 
@@ -74,6 +65,15 @@ class TOV(object):
         self.nvar = len(var)
         self.var  = dict(zip(var, range(self.nvar)))
         self.ivar = {v: k for k, v in self.var.items()}
+
+        # Precompute the variable indices __tov_rhs needs every ODE step
+        # (it used to rebuild 'H{}'.format(l)-style keys and dict-lookup
+        # them on every call -- by far the hottest part of the RHS).
+        self._r_idx, self._m_idx, self._nu_idx = self.var['r'], self.var['m'], self.var['nu']
+        self._H_idx = {l: self.var['H{}'.format(l)] for l in self.leven}
+        self._dH_idx = {l: self.var['dH{}'.format(l)] for l in self.leven}
+        self._Psi_idx = {l: self.var['Psi{}'.format(l)] for l in self.lodd}
+        self._dPsi_idx = {l: self.var['dPsi{}'.format(l)] for l in self.lodd}
 
         # ODE solver options
         if dhfact > 0.:
@@ -152,10 +152,12 @@ class TOV(object):
         Eqs. (18), (27), (28) of Damour & Nagar, Phys. Rev. D 80, 084035 (2009)
         for the metric perturbation used to obtain the Love number.
         """
-        dy = np.zeros_like(y)
+        # Every entry of dy is unconditionally overwritten below, so
+        # there's no need to zero-fill a fresh array each call.
+        dy = np.empty_like(y)
         # Unpack y
-        r  = y[self.var['r']]
-        m  = y[self.var['m']]
+        r  = y[self._r_idx]
+        m  = y[self._m_idx]
         # EOS call
         p    = self.eos.Pressure_Of_PseudoEnthalpy(h)
         e    = self.eos.EnergyDensity_Of_PseudoEnthalpy(h)
@@ -165,30 +167,30 @@ class TOV(object):
         dr_dh  = -r * (r - 2.0 * m)/(m + 4.0*np.pi*r**3*p)
         dm_dh  = 4.0 * np.pi * r**2 * e * dr_dh
         dnu_dr =  2.0 * (m + 4.0 * np.pi * r**3 * p) / (r * (r - 2.0 * m))
-        dy[self.var['r']] = dr_dh
-        dy[self.var['m']] = dm_dh
-        dy[self.var['nu']] = dnu_dr * dr_dh
+        dy[self._r_idx] = dr_dh
+        dy[self._m_idx] = dm_dh
+        dy[self._nu_idx] = dnu_dr * dr_dh
         # print('derivs:', dr_dh, dm_dh, dnu_dr)
         # Even perturbations
         if len(self.leven) != 0:
             C1,C0 = self.__pert_even(self.leven,m,r,p,e,dedp,dnu_dr)
             for l in self.leven:
-                H = y[self.var['H{}'.format(l)]]
-                dH = y[self.var['dH{}'.format(l)]]
+                H = y[self._H_idx[l]]
+                dH = y[self._dH_idx[l]]
                 dH_dh = dH * dr_dh
                 ddH_dh = -(C0[l] * H + C1 * dH) * dr_dh
-                dy[self.var['H{}'.format(l)]] = dH_dh
-                dy[self.var['dH{}'.format(l)]] = ddH_dh
+                dy[self._H_idx[l]] = dH_dh
+                dy[self._dH_idx[l]] = ddH_dh
         # Odd perturbations
         if len(self.lodd) != 0:
             C1,C0 = self.__pert_odd(self.lodd,m,r,p,e,dedp)
             for l in self.lodd:
-                Psi  = y[self.var['Psi{}'.format(l)]]
-                dPsi = y[self.var['dPsi{}'.format(l)]]
+                Psi  = y[self._Psi_idx[l]]
+                dPsi = y[self._dPsi_idx[l]]
                 dPsi_dh = dPsi * dr_dh
                 ddPsi_dh = -(C0[l] * Psi + C1 * dPsi) * dr_dh
-                dy[self.var['Psi{}'.format(l)]] = dPsi_dh
-                dy[self.var['dPsi{}'.format(l)]] = ddPsi_dh
+                dy[self._Psi_idx[l]] = dPsi_dh
+                dy[self._dPsi_idx[l]] = ddPsi_dh
         return dy
 
     def __initial_data(self,pc,dh_fact=-1e-12,verbose=False):
@@ -250,7 +252,6 @@ class TOV(object):
         y  = sol.y[:,-1]
         dy = self.__tov_rhs(sol.t[-1],y)
         y[:] -= dy[:] * h1
-        np.append(sol.y, y)
         # Mass, Radius & Compactness
         M,R,C = self.__compute_mass_radius(y)
         # Match to Schwarzschild exterior

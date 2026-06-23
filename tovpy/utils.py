@@ -422,6 +422,9 @@ class Target:
         and might return the maximum pressure in the table if it does not contain the
         maximum mass configuration.
 
+        Sets self.M_max (in geometric units -- meters, consistent with
+        TOV.solve()'s M -- not solar masses) and self.pc_max.
+
         Parameters
         ----------
          p0 : float, optional, default=5e-10
@@ -438,7 +441,12 @@ class Target:
             kwargs.setdefault("method", "Nelder-Mead") # derivative-free method bounded method
 
         res = minimize(_solve, [np.log(p0),], **kwargs)
-        self.M_max = -res.fun
+        # _solve's objective is normalized by msol for the optimizer's
+        # numerical conditioning, but M_max is converted back to raw
+        # geometric units (meters) here to stay consistent with
+        # TOV.solve()'s M/R/self.tov.M elsewhere in this API -- callers
+        # wanting solar masses must divide by msol themselves.
+        self.M_max = -res.fun * msol
         self.pc_max = np.exp(res.x[0])
 
         if (self.warn
