@@ -31,15 +31,15 @@ from .eos import EOS
 from .units import Units
 
 class TOV(object):
-    
-    """ 
+
+    """
 
     Class to solve the Tolman-Oppenheimer-Volkov stellar structure
     equations together with even/odd parity stationary bartropic perturbations
-    
-    Lindblom , Astrophys. J. 398 569. (1992) 
+
+    Lindblom , Astrophys. J. 398 569. (1992)
     Damour & Nagar, Phys. Rev. D 80, 084035 (2009)
-    
+
     Work in geometric units
 
     Reference codes:
@@ -51,12 +51,12 @@ class TOV(object):
 
     def __init__(self,
                  eos        = None, # EOS instance
-                 leven      = [], # multipole indexes of even perturbations 
-                 lodd       = [], # multipole indexes of odd perturbations 
+                 leven      = [], # multipole indexes of even perturbations
+                 lodd       = [], # multipole indexes of odd perturbations
                  dhfact     = -1e-12, # ODE step
                  ode_method = 'DOP853',
                  ode_atol   = 1e-9,
-                 ode_rtol   = 1e-9): 
+                 ode_rtol   = 1e-9):
 
         if not eos:
             raise ValueError("Must provide a EOS")
@@ -79,7 +79,7 @@ class TOV(object):
         if dhfact > 0.:
             raise ValueError("ODE timestep must be negative")
         self.dhfact = dhfact
-        self.ode_method = ode_method        
+        self.ode_method = ode_method
         self.ode_atol = ode_atol
         self.ode_rtol = ode_rtol
 
@@ -87,13 +87,8 @@ class TOV(object):
         self.M = np.nan
         self.R = np.nan
         self.C = np.nan
-        if len(self.leven) != 0:
-            self.k, self.h = {}, {}
+        self.k, self.h, self.j = {}, {}, {}
 
-        if len(self.lodd) != 0:
-            self.j = {}
-
-        
     def __buildvars(self):
         """
         List of varnames
@@ -106,7 +101,7 @@ class TOV(object):
             v.append('Psi{}'.format(l))
             v.append('dPsi{}'.format(l))
         return v
-    
+
     def __pert_even(self,ell,m,r,p,e,dedp,dnu_dr=[]):
         """
         Eq.(27-29) of Damour & Nagar, Phys. Rev. D 80, 084035 (2009)
@@ -122,14 +117,14 @@ class TOV(object):
             dnu2 = (2.0 * (m + 4.0 * np.pi * r3 * p) / (r * (r - 2.0 * m)))**2
         else:
             dnu2 = dnu_dr**2
-        C1 = 2.0/r + exp_lam * ( 2*m*div_r2 + 4*np.pi*r*(p-e) ) 
+        C1 = 2.0/r + exp_lam * ( 2*m*div_r2 + 4*np.pi*r*(p-e) )
         C0 = np.zeros(max(ell)+1)
         for l in ell:
             Lam = l*(l+1)
             C0[l] = -dnu2
-            C0[l] += exp_lam * ( -Lam*div_r2 + 4*np.pi*( 5*e + 9*p + (e + p) * dedp ) ) 
+            C0[l] += exp_lam * ( -Lam*div_r2 + 4*np.pi*( 5*e + 9*p + (e + p) * dedp ) )
         return C1, C0
-                
+
     def __pert_odd(self,ell,m,r,p,e,dedp):
         """
         Eq.(31) of Damour & Nagar, Phys. Rev. D 80, 084035 (2009)
@@ -155,7 +150,7 @@ class TOV(object):
         Implements Eqs. (5) and (6) of Lindblom, Astrophys. J. 398, 569 (1992).
         Also uses Eqs. (7) and (8) [ibid] for inner boundary data, and
         Eqs. (18), (27), (28) of Damour & Nagar, Phys. Rev. D 80, 084035 (2009)
-        for the metric perturbation used to obtain the Love number. 
+        for the metric perturbation used to obtain the Love number.
         """
         dy = np.zeros_like(y)
         # Unpack y
@@ -168,11 +163,11 @@ class TOV(object):
         # print(f'vars: r:{r} m:{m} h:{h} p:{p} e:{e}')
         # TOV
         dr_dh  = -r * (r - 2.0 * m)/(m + 4.0*np.pi*r**3*p)
-        dm_dh  = 4.0 * np.pi * r**2 * e * dr_dh 
+        dm_dh  = 4.0 * np.pi * r**2 * e * dr_dh
         dnu_dr =  2.0 * (m + 4.0 * np.pi * r**3 * p) / (r * (r - 2.0 * m))
         dy[self.var['r']] = dr_dh
         dy[self.var['m']] = dm_dh
-        dy[self.var['nu']] = dnu_dr * dr_dh        
+        dy[self.var['nu']] = dnu_dr * dr_dh
         # print('derivs:', dr_dh, dm_dh, dnu_dr)
         # Even perturbations
         if len(self.leven) != 0:
@@ -183,7 +178,7 @@ class TOV(object):
                 dH_dh = dH * dr_dh
                 ddH_dh = -(C0[l] * H + C1 * dH) * dr_dh
                 dy[self.var['H{}'.format(l)]] = dH_dh
-                dy[self.var['dH{}'.format(l)]] = ddH_dh    
+                dy[self.var['dH{}'.format(l)]] = ddH_dh
         # Odd perturbations
         if len(self.lodd) != 0:
             C1,C0 = self.__pert_odd(self.lodd,m,r,p,e,dedp)
@@ -193,7 +188,7 @@ class TOV(object):
                 dPsi_dh = dPsi * dr_dh
                 ddPsi_dh = -(C0[l] * Psi + C1 * dPsi) * dr_dh
                 dy[self.var['Psi{}'.format(l)]] = dPsi_dh
-                dy[self.var['dPsi{}'.format(l)]] = ddPsi_dh   
+                dy[self.var['dPsi{}'.format(l)]] = ddPsi_dh
         return dy
 
     def __initial_data(self,pc,dh_fact=-1e-12,verbose=False):
@@ -203,7 +198,7 @@ class TOV(object):
         * input the central pressure
         """
         y = np.zeros(self.nvar)
-        # Central values 
+        # Central values
         ec     = self.eos.EnergyDensity_Of_Pressure(pc)
         hc     = self.eos.PseudoEnthalpy_Of_Pressure(pc)
         dedp_c = self.eos.EnergyDensityDeriv_Of_Pressure(pc)
@@ -214,9 +209,9 @@ class TOV(object):
         h1 = 0.0 - dh
         r0 = np.sqrt(-3.0 * dh / (2.0 * np.pi * (ec + 3.0 * pc)))
         m0 = 4.0 * np.pi * r0**3 * ec / 3.0
-        # Series expansion for the initial core 
-        r0 *= 1.0 + 0.25 * dh * (ec - 3.0 * pc  - 0.6 * dedh_c) / (ec + 3.0 * pc) # second factor Eq. (7) of Lindblom (1992) 
-        m0 *= 1.0 + 0.6 * dh * dedh_c / ec # second factor of Eq. (8) of Lindblom (1992) 
+        # Series expansion for the initial core
+        r0 *= 1.0 + 0.25 * dh * (ec - 3.0 * pc  - 0.6 * dedh_c) / (ec + 3.0 * pc) # second factor Eq. (7) of Lindblom (1992)
+        m0 *= 1.0 + 0.6 * dh * dedh_c / ec # second factor of Eq. (8) of Lindblom (1992)
         y[self.var['r']]  = r0
         y[self.var['m']]  = m0
         y[self.var['nu']] = 0.0
@@ -234,7 +229,7 @@ class TOV(object):
         #     print("pc = {:.8e} hc = {:.8e} dh = {:.8e} h0  = {:.8e}".format(pc,hc,dh,h0))
         #     print(y, self.ivar)
         return y, h0, h1
-    
+
     def solve(self,pc):
         """
         Solves the Tolman-Oppenheimer-Volkov stellar structure equations using the pseudo-enthalpy formalism introduced in:
@@ -250,8 +245,8 @@ class TOV(object):
                         method = self.ode_method,
                         rtol = self.ode_rtol,
                         atol = self.ode_atol)
-    
-        # Take one final Euler step to get to surface 
+
+        # Take one final Euler step to get to surface
         y  = sol.y[:,-1]
         dy = self.__tov_rhs(sol.t[-1],y)
         y[:] -= dy[:] * h1
@@ -270,18 +265,33 @@ class TOV(object):
         self.R = R
         self.C = C
         self.sol = sol
+        # The closed-form Love number polynomials below are only valid
+        # for a physical compactness 0 < C < 0.5 (Schwarzschild limit);
+        # non-converged solves (e.g. the lowest-pc end of a tov_series,
+        # see utils.Target) can return M<=0/R<=0, hence C<=0, for which
+        # these polynomials hit exact-zero denominators (divide-by-zero
+        # RuntimeWarning) rather than producing a meaningful answer.
+        # Skip straight to NaN for those instead of evaluating them.
+        physical_C = 0 < C < 0.5
         if len(self.leven) != 0:
             k, h = {}, {}
             for l in self.leven:
+                if not physical_C:
+                    k[l] = np.nan
+                    h[l] = np.nan
+                    continue
                 yyl = R * y[self.var['dH{}'.format(l)]] / y[self.var['H{}'.format(l)]]
                 k[l] = self.__compute_Love_even(l,C,yyl)
                 h[l] = self.__compute_shape(l,C,yyl)
             self.k = k
             self.h = h
-        if len(self.lodd) != 0:                
+        if len(self.lodd) != 0:
         # Odd Love numbers
             j = {}
             for l in self.lodd:
+                if not physical_C:
+                    j[l] = np.nan
+                    continue
                 yyl = R*y[self.var['dPsi{}'.format(l)]]/y[self.var['Psi{}'.format(l)]]
                 j[l]= self.__compute_Love_odd(l,C,yyl)
             self.j = j
@@ -310,7 +320,7 @@ class TOV(object):
         for i in np.linspace(2,l,l-2+1,dtype=int):
             Pl2 = Pl2 + gamma(i)/gamma(i-2) * comb(l,i) * prod((l+i-1)/2-L) / gamma(l) * x**(i-2)
             dPl2 = dPl2 + gamma(i)/gamma(i-2) * comb(l,i) * prod((l+i-1)/2-L) / gamma(l) * (i-2) * x**(i-3)
-        
+
         dPl2 = 2**l*(-2*x)*Pl2/nP + 2**l*(1-x**2)*dPl2/nP
         Pl2  = 2**l*(1-x**2)*Pl2/nP
 
@@ -319,7 +329,7 @@ class TOV(object):
                                                             (-3 - l)*x**(-4 - l)*(-1 + x**2)*hyp2f1((l+3)/2, (l+4)/2,l+3/2,1/x**2) -\
                                                             (2*((l+3)/2)*((l+4)/2)*x**(-6 - l)*(-1 + x**2)*hyp2f1((l+3)/2+1, (l+4)/2+1,l+3/2+1,1/x**2)/(l+3/2)))
         return Pl2,dPl2,Ql2,dQl2
-    
+
     def __compute_psi(self, c, l):
         x = 1/c
         CoefficientP = poch(5, l-2) / poch (2-l, l-2) / poch(3+l, l-2) * gamma(l-2) * 2 ** (l-2)
@@ -363,13 +373,13 @@ class TOV(object):
         r = sol.y[self.var['r'],:]
         m = sol.y[self.var['m'],:]
         return np.trapz( r, 1./np.sqrt((1-2*m/r)), r )
-        
+
     def __compute_Love_odd(self,ell,c,y):
         """
-        Compute odd parity Love numbers given 
+        Compute odd parity Love numbers given
         * the multipolar index ell
         * the compactness c
-        * the ratio y = R Psi(R)'/Psi(R) 
+        * the ratio y = R Psi(R)'/Psi(R)
         Eq.(61) of Damour & Nagar, Phys. Rev. D 80 084035 (2009)
         """
         c2 = c**2
@@ -386,13 +396,13 @@ class TOV(object):
             factor =  - c ** (2 * ell + 1)
             j = factor * (dPsiP - c * y * PsiP) / (dPsiQ - c * y * PsiQ)
         return j
-    
+
     def __compute_Love_even(self,ell,c,y):
         """
-        Compute even parity Love numbers given 
+        Compute even parity Love numbers given
         * the multipolar index ell
         * the compactness c
-        * the ratio y = R H(R)'/H(R) 
+        * the ratio y = R H(R)'/H(R)
         Eq.(49) of Damour & Nagar, Phys. Rev. D 80 084035 (2009)
         """
         c2 = c**2
@@ -443,13 +453,13 @@ class TOV(object):
             Pl2, dPl2, Ql2, dQl2 = self.__compute_legendre(c, ell)
             k = -1/2*c**(2*ell+1)*(dPl2-c*y*Pl2)/(dQl2-c*y*Ql2)
         return k
-        
+
     def __compute_shape(self,ell,c,y):
         """
-        Compute even shape numbers given 
+        Compute even shape numbers given
         * the multipolar index ell
         * the compactness c
-        * the ratio y = R H(R)'/H(R) 
+        * the ratio y = R H(R)'/H(R)
         Eq.(95) of Damour & Nagar, Phys. Rev. D 80 084035 (2009)
         """
         c2 = c**2
@@ -486,7 +496,7 @@ class TOV(object):
             factor = c**(ell+1)*Pl2 * (1-(dPl2/Pl2-c*y)/(dQl2/Ql2-c*y))
             h = (term1 + term2) * factor
         return h
-    
+
     def Compute_Lambda(self,ell,k,C):
         r"""
         Compute tidal polarizability $\Lambda_\ell$

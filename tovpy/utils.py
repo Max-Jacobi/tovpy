@@ -30,7 +30,7 @@ uts = Units()
 msol = uts.constant['MRSUN_SI'][0]
 
 class Utils:
-    
+
     """
 
     Utility class for saving data and quick visualisation of results.
@@ -141,8 +141,8 @@ class Utils:
         # Compute the two sets of values from pressure array `p`
 
         this_tov = TOV(eos = self.eos, #ode_method='RK45',
-                        ode_atol=1e-10, 
-                        ode_rtol=1e-10, 
+                        ode_atol=1e-10,
+                        ode_rtol=1e-10,
                         dhfact=-1e-12)
         m_list, r_list, c_list = np.zeros(len(self.p)), np.zeros(len(self.p)), np.zeros(len(self.p))
         for i, pc in enumerate(self.p):
@@ -169,7 +169,7 @@ class Utils:
         lines1, labels1 = ax1.get_legend_handles_labels()
         lines2, labels2 = ax2.get_legend_handles_labels()
         ax1.legend(lines1 + lines2, labels1 + labels2, loc='best')
-       
+
         if savefigon:
             if filename is None:
                 filename = os.path.join(self.path, 'MR_plot.pdf')
@@ -191,8 +191,8 @@ class Utils:
         """
         # Compute the two sets of values from pressure array `p`
         this_tov = TOV(eos = self.eos, #ode_method='RK45',
-                        ode_atol=1e-10, 
-                        ode_rtol=1e-10, 
+                        ode_atol=1e-10,
+                        ode_rtol=1e-10,
                         dhfact=-1e-12)
         m_list, r_list, c_list = np.zeros(len(self.p)), np.zeros(len(self.p)), np.zeros(len(self.p))
         for i, pc in enumerate(self.p):
@@ -223,10 +223,10 @@ class Utils:
         """
         # Compute the two sets of values from the pressure array `p`
         this_tov = TOV(eos=self.eos, leven=leven, lodd=lodd,  # ode_method='RK45',
-                    ode_atol=1e-10, 
-                    ode_rtol=1e-10, 
+                    ode_atol=1e-10,
+                    ode_rtol=1e-10,
                     dhfact=-1e-12)
-        
+
         c_list = np.zeros(len(self.p))
         k_vars, h_vars = {}, {}
         for l in leven:
@@ -235,7 +235,7 @@ class Utils:
         j_vars = {}
         for l in lodd:
             j_vars['j' + str(l)] = np.zeros(len(self.p))
-        
+
         for i, pc in enumerate(self.p):
             _, _, c, k, h, j = this_tov.solve(pc)
             c_list[i] = c
@@ -244,13 +244,13 @@ class Utils:
                 h_vars['h' + str(l)][i] = h[l]
             for l in lodd:
                 j_vars['j' + str(l)][i] = j[l]
-        
+
         # Define a list of linestyles to differentiate each l value.
         linestyles = ['-', '--', '-.', ':']
-        
+
         # Create two subplots: one for k and j, and one for the shape h.
         fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True, figsize=(8, 10))
-        
+
         # --- Top subplot: Plot Love numbers k and j ---
         # Plot Love numbers k using different linestyles.
         for idx, l in enumerate(leven):
@@ -259,7 +259,7 @@ class Utils:
                     label=f'Love Number k{l}', marker='.', color='blue', linestyle=ls)
         ax1.set_ylabel('Love Number, k', color='blue')
         ax1.tick_params(axis='y', labelcolor='blue')
-        
+
         # Create a twin y-axis for j values.
         ax1_twin = ax1.twinx()
         for idx, l in enumerate(lodd):
@@ -269,13 +269,13 @@ class Utils:
                         label=f'Love Number j{l}', marker='.', color='red', linestyle=ls)
         ax1_twin.set_ylabel('Love Number, j', color='red')
         ax1_twin.tick_params(axis='y', labelcolor='red')
-        
+
         ax1.set_title('Love Numbers')
         # Combine legends from both y-axes.
         lines1, labels1 = ax1.get_legend_handles_labels()
         lines2, labels2 = ax1_twin.get_legend_handles_labels()
         ax1.legend(lines1 + lines2, labels1 + labels2, loc='best')
-        
+
         # --- Bottom subplot: Plot the shape h ---
         for idx, l in enumerate(leven):
             ls = linestyles[idx % len(linestyles)]
@@ -284,7 +284,7 @@ class Utils:
         ax2.set_xlabel('Compactness')
         ax2.set_ylabel('Shape h')
         ax2.legend(loc='best')
-        
+
         plt.tight_layout()
         if savefigon:
             if filename is None:
@@ -307,8 +307,8 @@ class Utils:
         """
         # Compute the two sets of values from pressure array `p`
         this_tov = TOV(eos = self.eos, leven=leven, lodd=lodd, #ode_method='RK45',
-                        ode_atol=1e-10, 
-                        ode_rtol=1e-10, 
+                        ode_atol=1e-10,
+                        ode_rtol=1e-10,
                         dhfact=-1e-12)
         m_list, r_list, c_list = np.zeros(len(self.p)), np.zeros(len(self.p)), np.zeros(len(self.p))
         k_vars, h_vars = {} , {}
@@ -357,6 +357,7 @@ class Target:
         # path: None | str = None,
         leven: list[int] = [],
         lodd: list[int] = [],
+        warn: bool = True,
         **kwargs):
         """
         Parameters
@@ -367,11 +368,14 @@ class Target:
              multipole indexes of even perturbations
          lodd : list, optional
              multipole indexes of odd perturbations
+         warn : bool, optional
+                if True, warn if maximum mass configuration appears to be outside of EOS table
         """
 
         if not eos:
             raise ValueError("Must provide a EOS")
         self.eos = eos
+        self.warn = warn
 
         self.tov = TOV(eos=self.eos, leven=leven, lodd=lodd, **kwargs)
         self.M_max = None
@@ -409,7 +413,6 @@ class Target:
             if self.pc_max is None:
                 self.maximum_mass()
             b = self.pc_max
-
         return np.exp(bisect(_solve, np.log(a), np.log(b), **kwargs))
 
     def maximum_mass(self, p0: float=5e-10, **kwargs) -> OptimizeResult:
@@ -428,7 +431,7 @@ class Target:
         """
         def _solve(pc):
             M, *_ = self.tov.solve(np.exp(pc[0]))
-            return -M
+            return -M/msol
 
         if isinstance(self.eos, EOSTabular):
             kwargs.setdefault("bounds", [(np.log(self.eos.min_pTab), np.log(self.eos.max_pTab))])
@@ -438,7 +441,8 @@ class Target:
         self.M_max = -res.fun
         self.pc_max = np.exp(res.x[0])
 
-        if isinstance(self.eos, EOSTabular) and np.isclose(self.pc_max, self.eos.max_pTab):
-            warn("Maximum mass configuration appears to be outside of EOS table", RuntimeWarning)
-
+        if (self.warn
+            and isinstance(self.eos, EOSTabular)
+            and (1-self.pc_max/self.eos.max_pTab)<1e-6):
+            warn(f"Maximum mass configuration appears to be outside of EOS table. pc={self.pc_max} p_max={self.eos.max_pTab}", RuntimeWarning)
         return res
