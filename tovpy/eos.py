@@ -19,7 +19,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 import os
 import numpy as np
 from numpy import log, exp
-from scipy.interpolate import CubicSpline
+from scipy.interpolate import CubicSpline, PchipInterpolator
 from scipy import integrate
 import pandas as pd
 from io import StringIO
@@ -779,9 +779,14 @@ class EOSTabular(object):
         self.logeTab = np.log(eTab)
         self.lognTab = np.log(nTab)
 
-        self.interp_logEnergyDensity_from_logPressure = CubicSpline(self.logpTab,self.logeTab)
-        self.interp_logPressure_from_logEnergyDensity = CubicSpline(self.logeTab,self.logpTab)
-        self.interp_logBaryonDensity_from_logPressure = CubicSpline(self.logpTab,self.lognTab)
+        # PchipInterpolator preserves monotonicity of the EOS data, preventing
+        # cubic-spline overshoot at the crust-core stitch kink (slope discontinuity)
+        # that otherwise causes exp(spline(log h)) to overflow during TOV integration.
+        # The call interface (including derivative order as second positional arg) is
+        # identical to CubicSpline, so all existing call sites are unaffected.
+        self.interp_logEnergyDensity_from_logPressure = PchipInterpolator(self.logpTab,self.logeTab)
+        self.interp_logPressure_from_logEnergyDensity = PchipInterpolator(self.logeTab,self.logpTab)
+        self.interp_logBaryonDensity_from_logPressure = PchipInterpolator(self.logpTab,self.lognTab)
 
         # if self.table.shape[1] != 4:
         hTab = self.__pseudoenthalpy_from_p_and_e(pTab,eTab)
@@ -791,10 +796,10 @@ class EOSTabular(object):
         self.min_hTab = np.min(hTab)
         self.hBins = np.array([self.min_hTab, self.max_hTab])
         self.loghTab = np.log(hTab)
-        self.interp_logEnergyDensity_from_logPseudoEnthalpy = CubicSpline(self.loghTab,self.logeTab)
-        self.interp_logPressure_from_logPseudoEnthalpy = CubicSpline(self.loghTab,self.logpTab)
-        self.interp_logPseudoEnthalpy_from_logEnergyDensity = CubicSpline(self.logeTab,self.loghTab)
-        self.interp_logPseudoEnthalpy_from_logPressure = CubicSpline(self.logpTab,self.loghTab)
+        self.interp_logEnergyDensity_from_logPseudoEnthalpy = PchipInterpolator(self.loghTab,self.logeTab)
+        self.interp_logPressure_from_logPseudoEnthalpy = PchipInterpolator(self.loghTab,self.logpTab)
+        self.interp_logPseudoEnthalpy_from_logEnergyDensity = PchipInterpolator(self.logeTab,self.loghTab)
+        self.interp_logPseudoEnthalpy_from_logPressure = PchipInterpolator(self.logpTab,self.loghTab)
 
     def __remove_leading_zero(self, table):
         """

@@ -451,6 +451,6 @@ class Target:
 
         if (self.warn
             and isinstance(self.eos, EOSTabular)
-            and (1-self.pc_max/self.eos.max_pTab)<1e-6):
+            and (1 - self.pc_max/self.eos.max_pTab) < 1e-6):
             warn(f"Maximum mass configuration appears to be outside of EOS table. pc={self.pc_max} p_max={self.eos.max_pTab}", RuntimeWarning)
         return res
