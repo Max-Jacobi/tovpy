@@ -16,10 +16,9 @@ You should have received a copy of the GNU General Public License
 along with this program. If not, see <https://www.gnu.org/licenses/>.
 """
 
-import sys, os, shutil
+import os
 import numpy as np
 from numpy import log, exp
-import scipy as sp
 from scipy.interpolate import CubicSpline, PchipInterpolator
 from scipy import integrate
 import pandas as pd
@@ -821,6 +820,22 @@ class EOSTabular(object):
 
     """ p-functions """
 
+    @staticmethod
+    def _branch(x, bins):
+        """
+        Equivalent to int(np.digitize(x, bins)) for the 2-element
+        [min, max] table-bound bins used throughout this class (0 below
+        the table, 1 inside, 2 above), but as a plain scalar comparison
+        -- this avoids np.digitize's array-construction overhead in
+        what is otherwise the dominant call inside the TOV ODE RHS,
+        evaluated scalar-by-scalar at every integration step.
+        """
+        if x < bins[0]:
+            return 0
+        if x < bins[1]:
+            return 1
+        return 2
+
     def EnergyDensity_Of_Pressure(self,p):
 
         """
@@ -830,10 +845,11 @@ class EOSTabular(object):
         Usre ultra-relativistic degenerate gas, p = K * e**(4./3.)
         and return e = K * p**(3./4.) above max pressure
         """
-        if np.digitize(p,self.pBins) == 0:
+        branch = self._branch(p, self.pBins)
+        if branch == 0:
             K = self.min_eTab/self.min_pTab**(3/5)
             e = K * p ** (3/5)
-        elif np.digitize(p,self.pBins) == 1:
+        elif branch == 1:
             e = exp(self.interp_logEnergyDensity_from_logPressure(log(p)))
         else:
             K = self.max_eTab/self.max_pTab**(3/4)
@@ -850,15 +866,19 @@ class EOSTabular(object):
         """
         if finite_diff:
             return self.__EnergyDensityDeriv_Of_Pressure_fd(p)
-        logp = log(p)
-        e = self.EnergyDensity_Of_Pressure(p)
-        # loge = log(e)
-        if np.digitize(p,self.pBins) == 0:
+        branch = self._branch(p, self.pBins)
+        if branch == 0:
+            K = self.min_eTab/self.min_pTab**(3/5)
+            e = K * p ** (3/5)
             dedp = 0.6 * e / p
-        elif np.digitize(p,self.pBins) == 1:
+        elif branch == 1:
+            logp = log(p)
+            e = exp(self.interp_logEnergyDensity_from_logPressure(logp))
             dloge_dlogp = self.interp_logEnergyDensity_from_logPressure(logp, 1)
             dedp = dloge_dlogp * e / p
         else:
+            K = self.max_eTab/self.max_pTab**(3/4)
+            e = K * p ** (3/4)
             dedp = 0.75 * e / p
         return dedp
 
@@ -890,10 +910,11 @@ class EOSTabular(object):
         # if h.size == 1:
         #     return h[0]
         # return h
-        if np.digitize(p,self.pBins) == 0:
+        branch = self._branch(p, self.pBins)
+        if branch == 0:
             K = self.min_hTab/self.min_pTab**(2/5)
             h = K * p ** (2/5)
-        elif np.digitize(p,self.pBins) == 1:
+        elif branch == 1:
             h = exp(self.interp_logPseudoEnthalpy_from_logPressure(log(p)))
         else:
             K = self.max_hTab/self.max_pTab**(1/4)
@@ -919,10 +940,11 @@ class EOSTabular(object):
         # if e.size == 1:
         #     return e[0]
         # return e
-        if np.digitize(h,self.hBins) == 0:
+        branch = self._branch(h, self.hBins)
+        if branch == 0:
             K = self.min_eTab/self.min_hTab**(3/2)
             e = K * h ** (3/2)
-        elif np.digitize(h,self.hBins) == 1:
+        elif branch == 1:
             e = exp(self.interp_logEnergyDensity_from_logPseudoEnthalpy(log(h)))
         else:
             K = self.max_eTab/self.max_hTab**3
@@ -946,10 +968,11 @@ class EOSTabular(object):
         # if p.size == 1:
         #     return p[0]
         # return p
-        if np.digitize(h,self.hBins) == 0:
+        branch = self._branch(h, self.hBins)
+        if branch == 0:
             K = self.min_pTab/self.min_hTab**(5/2)
             p = K * h ** (5/2)
-        elif np.digitize(h,self.hBins) == 1:
+        elif branch == 1:
             p = exp(self.interp_logPressure_from_logPseudoEnthalpy(log(h)))
         else:
             K = self.max_pTab/self.max_hTab**4
@@ -1034,10 +1057,11 @@ class EOSTabular(object):
         # if p.size == 1:
         #     return p[0]
         # return p
-        if np.digitize(e,self.eBins) == 0:
+        branch = self._branch(e, self.eBins)
+        if branch == 0:
             K = self.min_pTab/self.min_eTab**(5/3)
             p = K * e ** (5/3)
-        elif np.digitize(e,self.eBins) == 1:
+        elif branch == 1:
             p = exp(self.interp_logPressure_from_logEnergyDensity(log(e)))
         else:
             K = self.max_pTab/self.max_eTab**(4/3)
