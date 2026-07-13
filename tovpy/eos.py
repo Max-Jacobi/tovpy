@@ -24,7 +24,6 @@ from scipy.interpolate import CubicSpline
 from scipy import integrate
 import pandas as pd
 from io import StringIO
-import pkg_resources
 
 from . import units as units
 
