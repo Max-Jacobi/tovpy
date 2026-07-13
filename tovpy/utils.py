@@ -20,7 +20,7 @@ from warnings import warn
 import numpy as np
 import matplotlib.pyplot as plt
 from tqdm import tqdm
-from scipy.optimize import minimize, bisect, OptimizeResult
+from scipy.optimize import minimize, minimize_scalar, bisect, bracket, OptimizeResult
 
 from .eos import EOS, EOSTabular
 from .units import Units
@@ -422,32 +422,99 @@ class Target:
         and might return the maximum pressure in the table if it does not contain the
         maximum mass configuration.
 
+        For tabular EOS, the search uses scipy.optimize.minimize_scalar with
+        method="bounded" instead of scipy.optimize.minimize with
+        method="Nelder-Mead": it's a proper 1-D bounded solver rather than a
+        derivative-free simplex search artificially restricted to 1-D, so
+        it's both faster and more stable once it's looking in the right
+        place (Nelder-Mead in 1-D can stall or wander before its simplex
+        shrinks below xatol).
+
+        Importantly, the bounded search is NOT simply run over the full
+        [min_pTab, max_pTab] table range: cold-beta-equilibrium tables
+        commonly extend many decades below the core into a near-vacuum
+        crust, where the TOV integration (typically run with loose
+        tolerances for speed while hunting for the maximum) can be
+        numerically unstable and produce spurious local optima in M(pc)
+        that are numerical artifacts, not physical. A blind bounds=
+        (min_pTab, max_pTab) search has no way to tell these apart from the
+        true maximum-mass configuration and can converge to one of them
+        instead. So p0 is used here after all (unlike a first pass at this
+        refactor, which dropped it): scipy.optimize.bracket is used to find
+        a local bracket around p0 first, and only that narrow bracket
+        (clipped into the table's range) is handed to the bounded solver.
+        This keeps the search local to the physically-relevant peak, the
+        same way Nelder-Mead's simplex, seeded at p0, implicitly did -- but
+        with a solver whose convergence properties are actually appropriate
+        for 1-D. If bracketing around p0 fails, this falls back to a search
+        over the full table range and warns, since that full-range search
+        is not guaranteed reliable (see above).
+
+        For non-tabular EOS, p0 seeds scipy.optimize.minimize as before
+        (default method, e.g. Nelder-Mead, unless overridden via kwargs).
+
         Sets self.M_max (in geometric units -- meters, consistent with
         TOV.solve()'s M -- not solar masses) and self.pc_max.
 
         Parameters
         ----------
          p0 : float, optional, default=5e-10
-             Initial guess for the central pressure
+             Initial guess for the central pressure. For tabular EOS, only
+             used to seed the local bracket search (see above); the final
+             pc_max need not be close to it.
          **kwargs
-             Keyword arguments passed to scipy.optimize.minimize
+             Keyword arguments passed to scipy.optimize.minimize (non-tabular
+             EOS) or to scipy.optimize.minimize_scalar (tabular EOS, e.g.
+             options={'xatol': ...} to control the bracket tolerance in
+             log-pressure; defaults to minimize_scalar's own default, 1e-5,
+             which is already tighter than Nelder-Mead's default xatol of
+             1e-4). An explicit bounds= kwarg (in log-pressure) overrides
+             the automatic local-bracket search entirely.
         """
+        # Both _solve variants normalize by msol for the optimizer's numerical
+        # conditioning, but M_max is converted back to raw geometric units
+        # (meters) below to stay consistent with TOV.solve()'s M/R/self.tov.M
+        # elsewhere in this API -- callers wanting solar masses must divide
+        # by msol themselves.
         def _solve(pc):
+            # array form, for scipy.optimize.minimize (non-tabular branch)
             M, *_ = self.tov.solve(np.exp(pc[0]))
             return -M/msol
 
-        if isinstance(self.eos, EOSTabular):
-            kwargs.setdefault("bounds", [(np.log(self.eos.min_pTab), np.log(self.eos.max_pTab))])
-            kwargs.setdefault("method", "Nelder-Mead") # derivative-free method bounded method
+        def _solve_scalar(pc):
+            # scalar form, for scipy.optimize.minimize_scalar (tabular branch)
+            M, *_ = self.tov.solve(np.exp(pc))
+            return -M/msol
 
-        res = minimize(_solve, [np.log(p0),], **kwargs)
-        # _solve's objective is normalized by msol for the optimizer's
-        # numerical conditioning, but M_max is converted back to raw
-        # geometric units (meters) here to stay consistent with
-        # TOV.solve()'s M/R/self.tov.M elsewhere in this API -- callers
-        # wanting solar masses must divide by msol themselves.
-        self.M_max = -res.fun * msol
-        self.pc_max = np.exp(res.x[0])
+        if isinstance(self.eos, EOSTabular):
+            lo, hi = np.log(self.eos.min_pTab), np.log(self.eos.max_pTab)
+            bounds = kwargs.pop("bounds", None)
+            if bounds is None:
+                logp0 = np.clip(np.log(p0), lo, hi)
+                try:
+                    xa, xb, xc, *_ = bracket(_solve_scalar, xa=logp0 - 0.5, xb=logp0)
+                    blo = np.clip(min(xa, xc), lo, hi)
+                    bhi = np.clip(max(xa, xc), lo, hi)
+                    if blo >= bhi:
+                        raise RuntimeError("bracket collapsed after clipping to table range")
+                    bounds = (blo, bhi)
+                except RuntimeError:
+                    warn("Could not bracket a local maximum-mass "
+                         "configuration around p0; falling back to a search "
+                         "over the full tabulated EOS pressure range, which "
+                         "is not guaranteed to avoid spurious optima (e.g. "
+                         "in a table's low-density/crust region).",
+                         RuntimeWarning)
+                    bounds = (lo, hi)
+            kwargs["bounds"] = bounds
+            kwargs.setdefault("method", "bounded")
+            res = minimize_scalar(_solve_scalar, **kwargs)
+            self.M_max = -res.fun * msol
+            self.pc_max = np.exp(res.x)
+        else:
+            res = minimize(_solve, [np.log(p0),], **kwargs)
+            self.M_max = -res.fun * msol
+            self.pc_max = np.exp(res.x[0])
 
         if (self.warn
             and isinstance(self.eos, EOSTabular)

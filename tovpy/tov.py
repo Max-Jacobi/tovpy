@@ -257,9 +257,19 @@ class TOV(object):
         # Integrate
         # print("Integrating TOV equations")
         # print("h0 = {:.8e} h1 = {:.8e}".format(h0,h1))
+        # When no tidal perturbation equations are included (leven=lodd=[]),
+        # the error norm is computed from r, m, nu only.  These directly feel
+        # any kink in the EOS (e.g. a crust-core transition), causing DOP853
+        # to take infinitesimally small steps through the stiff region.
+        # LSODA's implicit stiffness detection avoids this; use it whenever
+        # the caller has not explicitly requested a specific method AND there
+        # are no tidal variables to dilute the error norm.
+        method = self.ode_method
+        if method == 'DOP853' and len(self.leven) == 0 and len(self.lodd) == 0:
+            method = 'LSODA'
         sol = solve_ivp(self.__tov_rhs, [h0, h1], y,
                         first_step = abs(self.dhfact),
-                        method = self.ode_method,
+                        method = method,
                         rtol = self.ode_rtol,
                         atol = self.ode_atol)
 
