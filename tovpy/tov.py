@@ -21,6 +21,7 @@ from scipy.integrate import solve_ivp
 from scipy.special import factorial2, gamma, factorial2, hyp2f1, poch
 from math import comb, prod
 
+
 def _safe_div(numerator, denominator):
     """numerator/denominator, or nan if denominator is exactly zero.
 
@@ -34,7 +35,6 @@ def _safe_div(numerator, denominator):
     downstream guards the way nan conventionally is. Branch around the
     exact-zero case rather than let the division happen and warn."""
     return np.nan if denominator == 0 else numerator / denominator
-
 
 class TOV(object):
 
