@@ -447,8 +447,13 @@ class Target:
         same way Nelder-Mead's simplex, seeded at p0, implicitly did -- but
         with a solver whose convergence properties are actually appropriate
         for 1-D. If bracketing around p0 fails, this falls back to a search
-        over the full table range and warns, since that full-range search
-        is not guaranteed reliable (see above).
+        over the full table range and warns (suppressible via the
+        constructor's warn=False, like the out-of-table warning below),
+        since that full-range search is not guaranteed reliable (see
+        above). Bracketing fails routinely -- not exceptionally -- for
+        short-table EOS whose M(pc) is still rising at the table edge
+        (no interior turnover), where the full-range fallback finds the
+        boundary maximum, which IS the right answer for such tables.
 
         For non-tabular EOS, p0 seeds scipy.optimize.minimize as before
         (default method, e.g. Nelder-Mead, unless overridden via kwargs).
@@ -499,12 +504,14 @@ class Target:
                         raise RuntimeError("bracket collapsed after clipping to table range")
                     bounds = (blo, bhi)
                 except RuntimeError:
-                    warn("Could not bracket a local maximum-mass "
-                         "configuration around p0; falling back to a search "
-                         "over the full tabulated EOS pressure range, which "
-                         "is not guaranteed to avoid spurious optima (e.g. "
-                         "in a table's low-density/crust region).",
-                         RuntimeWarning)
+                    if self.warn:
+                        warn("Could not bracket a local maximum-mass "
+                             "configuration around p0; falling back to a "
+                             "search over the full tabulated EOS pressure "
+                             "range, which is not guaranteed to avoid "
+                             "spurious optima (e.g. in a table's "
+                             "low-density/crust region).",
+                             RuntimeWarning)
                     bounds = (lo, hi)
             kwargs["bounds"] = bounds
             kwargs.setdefault("method", "bounded")
